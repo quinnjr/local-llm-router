@@ -1,3 +1,6 @@
+// Per-target helper usage varies; each test binary compiles its own copy.
+#![allow(dead_code)]
+
 use axum::{Json, Router, routing::get, routing::post};
 use std::sync::{Arc, Mutex};
 
