@@ -1,3 +1,4 @@
+pub mod api_admin;
 pub mod api_ollama;
 pub mod api_openai;
 pub mod config;
