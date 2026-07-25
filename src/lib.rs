@@ -38,6 +38,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(
                 config.router.request_timeout_secs,
             ))
+            .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("reqwest client builder failed");
         Ok(AppState {
