@@ -897,6 +897,9 @@ Discovery details:
 `tests/common/mod.rs`:
 
 ```rust
+// Per-target helper usage varies; each test binary compiles its own copy.
+#![allow(dead_code)]
+
 use axum::{Json, Router, routing::get, routing::post};
 use std::sync::{Arc, Mutex};
 
@@ -1271,7 +1274,7 @@ git commit -m "feat: per-flavor model discovery with unreachable-backend toleran
 mod common;
 
 use axum::body::Bytes;
-use local_llm_router::config::{Config, Flavor, RouterConfig, ServerConfig};
+use local_llm_router::config::{Config, RouterConfig};
 use local_llm_router::registry::Resolved;
 use local_llm_router::{AppState, proxy};
 
