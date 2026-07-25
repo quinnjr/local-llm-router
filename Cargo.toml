@@ -2,6 +2,14 @@
 name = "local-llm-router"
 version = "0.1.0"
 edition = "2024"
+description = "Minimalist local proxy routing OpenAI-compatible and Ollama-native API connections to LLM servers on your network, with unified model listing"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/quinnjr/local-llm-router"
+homepage = "https://github.com/quinnjr/local-llm-router"
+readme = "README.md"
+keywords = ["llm", "ollama", "openai", "proxy", "router"]
+categories = ["network-programming", "command-line-utilities"]
+authors = ["Joseph R. Quinn <423821+quinnjr@users.noreply.github.com>"]
 
 [dependencies]
 axum = "0.8"
