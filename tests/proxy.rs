@@ -1,6 +1,5 @@
 mod common;
 
-use axum::body::Bytes;
 use local_llm_router::config::{Config, RouterConfig};
 use local_llm_router::registry::Resolved;
 use local_llm_router::{AppState, proxy};
@@ -21,7 +20,7 @@ async fn rewrites_model_field_and_streams_response() {
         server_url: base,
         upstream_model: "gpt-oss-20b".into(),
     };
-    let body = Bytes::from(r#"{"model":"studio/gpt-oss-20b","messages":[],"stream":true}"#);
+    let body = serde_json::json!({"model":"studio/gpt-oss-20b","messages":[],"stream":true});
     let resp = proxy::forward(&state, &resolved, "/v1/chat/completions", body)
         .await
         .unwrap();
@@ -49,25 +48,11 @@ async fn missing_model_field_is_rejected() {
         server_url: "http://unused".into(),
         upstream_model: "m".into(),
     };
-    let body = Bytes::from(r#"{"messages":[]}"#);
+    let body = serde_json::json!({"messages": []});
     let err = proxy::forward(&state, &resolved, "/v1/chat/completions", body)
         .await
         .unwrap_err();
     assert!(matches!(err, proxy::ForwardError::MissingModel));
-}
-
-#[tokio::test]
-async fn invalid_json_is_rejected() {
-    let state = app_state();
-    let resolved = Resolved {
-        server_url: "http://unused".into(),
-        upstream_model: "m".into(),
-    };
-    let body = Bytes::from("not json");
-    let err = proxy::forward(&state, &resolved, "/v1/chat/completions", body)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, proxy::ForwardError::BadJson));
 }
 
 #[tokio::test]
@@ -77,7 +62,7 @@ async fn unreachable_upstream_maps_to_upstream_error() {
         server_url: "http://127.0.0.1:1".into(),
         upstream_model: "m".into(),
     };
-    let body = Bytes::from(r#"{"model":"x/m"}"#);
+    let body = serde_json::json!({"model":"x/m"});
     let err = proxy::forward(&state, &resolved, "/v1/chat/completions", body)
         .await
         .unwrap_err();
@@ -86,8 +71,8 @@ async fn unreachable_upstream_maps_to_upstream_error() {
 
 #[test]
 fn extract_model_reads_top_level_string() {
-    let body = Bytes::from(r#"{"model":"a/b","messages":[]}"#);
-    assert_eq!(proxy::extract_model(&body).as_deref(), Some("a/b"));
-    let body = Bytes::from(r#"{"messages":[]}"#);
-    assert_eq!(proxy::extract_model(&body), None);
+    let json = serde_json::json!({"model":"a/b","messages":[]});
+    assert_eq!(proxy::extract_model(&json), Some("a/b"));
+    let json = serde_json::json!({"messages":[]});
+    assert_eq!(proxy::extract_model(&json), None);
 }

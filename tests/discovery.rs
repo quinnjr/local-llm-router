@@ -76,11 +76,10 @@ async fn refresh_marks_unreachable_server_without_failing() {
     ];
     let state = AppState::new(&config_with(servers), vec![]).unwrap();
     let results = discovery::refresh_all(&state).await;
-    assert_eq!(results.len(), 2);
-    let up = results.iter().find(|(n, _)| n == "up").unwrap();
-    let down = results.iter().find(|(n, _)| n == "down").unwrap();
-    assert!(up.1);
-    assert!(!down.1);
+    assert_eq!(
+        results,
+        vec![("down".to_string(), false), ("up".to_string(), true)]
+    );
     // reachable server's models are listed; unreachable one contributes none
     let listed = state.registry.list_models(Flavor::OpenAi);
     assert_eq!(listed.len(), 1);

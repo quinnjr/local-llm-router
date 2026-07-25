@@ -109,3 +109,64 @@ async fn full_stack_routes_both_surfaces() {
 
     std::fs::remove_file(&state_file).ok();
 }
+
+#[tokio::test]
+async fn merged_listing_spans_servers() {
+    let (base1, _c1) = common::mock_openai(vec!["a-model"]).await;
+    let (base2, _c2) = common::mock_openai(vec!["b-model"]).await;
+    let config = Config {
+        router: RouterConfig::default(),
+        server: vec![
+            ServerConfig {
+                name: "s1".into(),
+                url: base1,
+                flavor: Flavor::OpenAi,
+                models: None,
+            },
+            ServerConfig {
+                name: "s2".into(),
+                url: base2,
+                flavor: Flavor::OpenAi,
+                models: None,
+            },
+        ],
+    };
+    let state = AppState::new(&config, vec![]).unwrap();
+    discovery::refresh_all(&state).await;
+    let url = common::spawn(build_router(state)).await;
+    let body: serde_json::Value = reqwest::get(format!("{url}/v1/models"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let ids: Vec<&str> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["s1/a-model", "s2/b-model"]);
+}
+
+#[tokio::test]
+async fn unknown_path_is_404() {
+    let (base, _c) = common::mock_openai(vec!["m"]).await;
+    let config = Config {
+        router: RouterConfig::default(),
+        server: vec![ServerConfig {
+            name: "s".into(),
+            url: base,
+            flavor: Flavor::OpenAi,
+            models: None,
+        }],
+    };
+    let state = AppState::new(&config, vec![]).unwrap();
+    discovery::refresh_all(&state).await;
+    let url = common::spawn(build_router(state)).await;
+    let client = reqwest::Client::new();
+    for path in ["/v1/nonexistent", "/api/nonexistent"] {
+        let resp = client.get(format!("{url}{path}")).send().await.unwrap();
+        assert_eq!(resp.status(), 404, "{path} did not return 404");
+    }
+}

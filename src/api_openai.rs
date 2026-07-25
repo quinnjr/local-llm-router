@@ -1,7 +1,7 @@
 use crate::AppState;
 use crate::config::Flavor;
-use crate::proxy::{self, ForwardError};
-use crate::registry::{ResolveError, exposed_id};
+use crate::proxy;
+use crate::registry::exposed_id;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -33,43 +33,8 @@ async fn list_models(State(state): State<AppState>) -> Response {
     Json(serde_json::json!({"object": "list", "data": data})).into_response()
 }
 
-async fn proxy_post(
-    State(state): State<AppState>,
-    uri: axum::http::Uri,
-    body: Bytes,
-) -> Response {
-    let path = uri.path().to_string();
-    let Some(model) = proxy::extract_model(&body) else {
-        return error(StatusCode::BAD_REQUEST, "request body has no \"model\" field");
-    };
-    let resolved = match state.registry.resolve(Flavor::OpenAi, &model) {
-        Ok(r) => r,
-        Err(ResolveError::Unknown { known, .. }) => {
-            return error(
-                StatusCode::NOT_FOUND,
-                &format!("unknown model '{model}'. known models: {}", known.join(", ")),
-            );
-        }
-        Err(ResolveError::Ambiguous { candidates, .. }) => {
-            return error(
-                StatusCode::BAD_REQUEST,
-                &format!(
-                    "ambiguous model '{model}'. qualified candidates: {}",
-                    candidates.join(", ")
-                ),
-            );
-        }
-    };
-    match proxy::forward(&state, &resolved, &path, body).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            let status = match e {
-                ForwardError::MissingModel | ForwardError::BadJson => StatusCode::BAD_REQUEST,
-                ForwardError::Upstream(_) => StatusCode::BAD_GATEWAY,
-            };
-            error(status, &e.to_string())
-        }
-    }
+async fn proxy_post(State(state): State<AppState>, uri: axum::http::Uri, body: Bytes) -> Response {
+    proxy::dispatch(state, uri, body, Flavor::OpenAi, error).await
 }
 
 fn error(status: StatusCode, message: &str) -> Response {

@@ -168,7 +168,9 @@ Error bodies match the inbound surface's native shape (OpenAI error object on
 |---|---|
 | Unknown model | 404 + list of known IDs |
 | Ambiguous bare model | 400 + qualified candidates |
-| Backend unreachable / connection failure mid-request | 502 |
+| Malformed JSON body ("request body is not valid JSON") | 400 |
+| Backend unreachable / connection failure before upstream response | 502 |
+| Upstream failure mid-stream (status already committed) | stream truncated, logged |
 | Duplicate name or `/` in name (admin add) | 409 |
 | Delete of config-defined server | 409 |
 
@@ -192,6 +194,9 @@ Single crate, small modules with one job each:
 
 Rust (edition 2024), `axum`, `tokio`, `reqwest` (rustls, streaming),
 `serde`, `toml`, `tracing` + `tracing-subscriber`. No other dependencies.
+(`futures-util` was added during audit reconciliation for mid-stream error
+logging — it is already in the lock tree via reqwest and adds zero new
+packages.)
 
 ## Testing
 

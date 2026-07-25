@@ -1,12 +1,12 @@
 use crate::AppState;
 use crate::registry::Resolved;
-use axum::body::{Body, Bytes};
+use axum::body::Body;
 use axum::response::Response;
+use futures_util::TryStreamExt;
 
 #[derive(Debug)]
 pub enum ForwardError {
     MissingModel,
-    BadJson,
     Upstream(reqwest::Error),
 }
 
@@ -14,7 +14,6 @@ impl std::fmt::Display for ForwardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ForwardError::MissingModel => write!(f, "request body has no \"model\" field"),
-            ForwardError::BadJson => write!(f, "request body is not valid JSON"),
             ForwardError::Upstream(e) => write!(f, "upstream request failed: {e}"),
         }
     }
@@ -22,19 +21,71 @@ impl std::fmt::Display for ForwardError {
 
 impl std::error::Error for ForwardError {}
 
-pub fn extract_model(body: &Bytes) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
-    v["model"].as_str().map(|s| s.to_string())
+pub fn extract_model(json: &serde_json::Value) -> Option<&str> {
+    json["model"].as_str()
+}
+
+/// Shared parse → resolve → forward flow for both API surfaces.
+/// `error` renders the surface-native error envelope.
+pub async fn dispatch(
+    state: AppState,
+    uri: axum::http::Uri,
+    body: axum::body::Bytes,
+    flavor: crate::config::Flavor,
+    error: fn(axum::http::StatusCode, &str) -> axum::response::Response,
+) -> axum::response::Response {
+    let path = uri.path().to_string();
+    let json: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(j) => j,
+        Err(_) => {
+            return error(
+                axum::http::StatusCode::BAD_REQUEST,
+                "request body is not valid JSON",
+            );
+        }
+    };
+    let Some(model) = extract_model(&json) else {
+        return error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "request body has no \"model\" field",
+        );
+    };
+    let resolved = match state.registry.resolve(flavor, model) {
+        Ok(r) => r,
+        Err(crate::registry::ResolveError::Unknown { known, .. }) => {
+            return error(
+                axum::http::StatusCode::NOT_FOUND,
+                &format!("unknown model '{model}'. known models: {}", known.join(", ")),
+            );
+        }
+        Err(crate::registry::ResolveError::Ambiguous { candidates, .. }) => {
+            return error(
+                axum::http::StatusCode::BAD_REQUEST,
+                &format!(
+                    "ambiguous model '{model}'. qualified candidates: {}",
+                    candidates.join(", ")
+                ),
+            );
+        }
+    };
+    match forward(&state, &resolved, &path, json).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            let status = match e {
+                ForwardError::MissingModel => axum::http::StatusCode::BAD_REQUEST,
+                ForwardError::Upstream(_) => axum::http::StatusCode::BAD_GATEWAY,
+            };
+            error(status, &e.to_string())
+        }
+    }
 }
 
 pub async fn forward(
     state: &AppState,
     resolved: &Resolved,
     path: &str,
-    body: Bytes,
+    mut json: serde_json::Value,
 ) -> Result<Response, ForwardError> {
-    let mut json: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_| ForwardError::BadJson)?;
     if json["model"].as_str().is_none() {
         return Err(ForwardError::MissingModel);
     }
@@ -59,7 +110,11 @@ pub async fn forward(
 
     // Byte-stream pass-through. When the client disconnects, axum drops this
     // body, which drops the reqwest stream and cancels the upstream request.
-    let body = Body::from_stream(upstream.bytes_stream());
+    let server = resolved.server_url.clone();
+    let path = path.to_string();
+    let body = Body::from_stream(upstream.bytes_stream().inspect_err(move |e| {
+        tracing::warn!(server = %server, path = %path, error = %e, "upstream stream failed mid-response");
+    }));
     Ok(Response::builder()
         .status(status.as_u16())
         .header("content-type", content_type)

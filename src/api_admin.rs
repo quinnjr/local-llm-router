@@ -86,12 +86,12 @@ async fn add_server(
         return resp;
     }
     discovery::refresh_one(&state, &name).await;
-    let entry = state
-        .registry
-        .list_servers()
-        .into_iter()
-        .find(|e| e.config.name == name)
-        .expect("just inserted");
+    let Some(entry) = state.registry.get_server(&name) else {
+        return error(
+            StatusCode::CONFLICT,
+            "server was removed concurrently",
+        );
+    };
     (StatusCode::CREATED, Json(server_json(&entry))).into_response()
 }
 

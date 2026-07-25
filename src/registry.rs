@@ -238,6 +238,11 @@ impl Registry {
         out
     }
 
+    pub fn get_server(&self, name: &str) -> Option<ServerEntry> {
+        let inner = self.inner.read().unwrap();
+        inner.get(name).cloned()
+    }
+
     pub fn state_servers(&self) -> Vec<ServerConfig> {
         let inner = self.inner.read().unwrap();
         inner

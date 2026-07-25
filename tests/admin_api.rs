@@ -1,6 +1,7 @@
 mod common;
 
-use local_llm_router::config::{Config, Flavor, RouterConfig, ServerConfig};
+use local_llm_router::config::{Config, Flavor, RouterConfig, ServerConfig, StateFile};
+use local_llm_router::registry::{Origin, RegistryError};
 use local_llm_router::{AppState, api_admin, discovery};
 
 async fn test_app(state_file: std::path::PathBuf) -> (String, AppState, common::Capture) {
@@ -161,4 +162,61 @@ async fn refresh_reports_reachability() {
     let results = body["results"].as_array().unwrap();
     assert_eq!(results[0]["name"], "studio");
     assert_eq!(results[0]["reachable"], true);
+}
+
+#[test]
+fn state_and_config_servers_merge_at_startup() {
+    let state_file = temp_state("reload");
+    let servers = vec![ServerConfig {
+        name: "rig".into(),
+        url: "http://127.0.0.1:11434".into(),
+        flavor: Flavor::Ollama,
+        models: None,
+    }];
+    StateFile::save(&state_file, &servers).unwrap();
+    let loaded = StateFile::load(&state_file).unwrap();
+    let config = Config {
+        router: RouterConfig::default(),
+        server: vec![ServerConfig {
+            name: "studio".into(),
+            url: "http://127.0.0.1:8080".into(),
+            flavor: Flavor::OpenAi,
+            models: None,
+        }],
+    };
+    let state = AppState::new(&config, loaded.server).unwrap();
+    let entries = state.registry.list_servers();
+    let rig = entries.iter().find(|e| e.config.name == "rig").unwrap();
+    assert_eq!(rig.origin, Origin::State);
+    let studio = entries.iter().find(|e| e.config.name == "studio").unwrap();
+    assert_eq!(studio.origin, Origin::Config);
+    std::fs::remove_file(&state_file).ok();
+}
+
+#[test]
+fn duplicate_across_config_and_state_fails_startup() {
+    let state_file = temp_state("dupstart");
+    let servers = vec![ServerConfig {
+        name: "studio".into(),
+        url: "http://127.0.0.1:9999".into(),
+        flavor: Flavor::Ollama,
+        models: None,
+    }];
+    StateFile::save(&state_file, &servers).unwrap();
+    let loaded = StateFile::load(&state_file).unwrap();
+    let config = Config {
+        router: RouterConfig::default(),
+        server: vec![ServerConfig {
+            name: "studio".into(),
+            url: "http://127.0.0.1:8080".into(),
+            flavor: Flavor::OpenAi,
+            models: None,
+        }],
+    };
+    let result = AppState::new(&config, loaded.server);
+    assert!(matches!(
+        result,
+        Err(RegistryError::DuplicateName(name)) if name == "studio"
+    ));
+    std::fs::remove_file(&state_file).ok();
 }
