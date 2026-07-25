@@ -1,7 +1,7 @@
 mod common;
 
 use axum::body::Bytes;
-use local_llm_router::config::{Config, Flavor, RouterConfig, ServerConfig};
+use local_llm_router::config::{Config, RouterConfig};
 use local_llm_router::registry::Resolved;
 use local_llm_router::{AppState, proxy};
 
