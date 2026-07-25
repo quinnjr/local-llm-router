@@ -1,5 +1,6 @@
 pub mod config;
 pub mod discovery;
+pub mod proxy;
 pub mod registry;
 
 use config::{Config, ServerConfig};
