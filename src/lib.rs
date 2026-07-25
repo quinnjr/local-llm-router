@@ -1,3 +1,4 @@
+pub mod api_openai;
 pub mod config;
 pub mod discovery;
 pub mod proxy;
