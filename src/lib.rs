@@ -47,3 +47,11 @@ impl AppState {
         })
     }
 }
+
+pub fn build_router(state: AppState) -> axum::Router {
+    axum::Router::new()
+        .merge(api_openai::router())
+        .merge(api_ollama::router())
+        .merge(api_admin::router())
+        .with_state(state)
+}
